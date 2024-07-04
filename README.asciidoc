@@ -1,7 +1,13 @@
 Bob
 ===
+// markdown [![Java CI with Maven](https://github.com/JustAnother1/bob/actions/workflows/maven.yml/badge.svg)](https://github.com/JustAnother1/bob/actions/workflows/maven.yml)
+
+https://github.com/JustAnother1/bob/actions/workflows/maven.yml[image:https://github.com/JustAnother1/bob/actions/workflows/maven.yml/badge.svg["Java CI with Maven"]^]
 
 :toc:
+
+
+
 
 == license
 
