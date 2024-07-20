@@ -12,6 +12,7 @@ import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import ch.qos.logback.core.util.StatusPrinter;
 import de.nomagic.gdb.Gdb;
+import de.nomagic.gdb.GdbCommand;
 
 public class BobMain
 {
@@ -127,26 +128,21 @@ public class BobMain
         }
     }
 
-    public void run() throws IOException
+    public void run()
     {
         Gdb g = new Gdb();
         g.open();
+        GdbCommand cmd = new GdbCommand("list-features");
+        cmd = g.send_command(cmd);
+        log.info("cmd : " + cmd);
         g.close();
-        log.info("Done !");
+        log.info("main.run(): Done !");
     }
 
     public static void main(String[] args)
     {
         BobMain bob = new BobMain(args);
-        try
-        {
-            bob.run();
-        }
-        catch (IOException e)
-        {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
+        bob.run();
         System.out.println("main: Done !");
     }
 

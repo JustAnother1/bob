@@ -11,34 +11,156 @@ public class Gdb
 {
     private final Logger log =  LoggerFactory.getLogger(this.getClass().getName());
 
+    // "arm-none-eabi-gdb"
+    // "--interpreter=mi4"
+    // select the interpreter
+    // mi = machine oriented line based interface
+    // 4 is the version
+    // version 1 was in GDB version 5.1  (2002-01-31)
+    // version 2 was in GDB version 6.0  (2003-10-06)
+    // version 3 was in GDB version 9.1  (2020-02-08)
+    // version 4 was in GDB version 13.1 (2023-02-19)
+    //
+    // "--nh"
+    // Do not execute commands from ~/.config/gdb/gdbinit, ~/.gdbinit, ~/.config/gdb/gdbearlyinit, or ~/.gdbearlyinit
+    // "--nx"
+    // Do not execute commands from any .gdbinit or .gdbearlyinit initialization files.
+
     private String[] gdb_cmd = {"arm-none-eabi-gdb", "--interpreter=mi4", "--nh", "--nx"};
     private ProcessBuilder builder;
-    private Process process;
+    private Process process = null;
     private BufferedWriter gdb_in;
     private BufferedReader gdb_out;
+    private GdbState state;
+
 
     public Gdb()
     {
         builder = new ProcessBuilder(gdb_cmd);
-        builder.redirectErrorStream(true); // STDerr is merged with STDout
+        builder.redirectErrorStream(true); // stderr is merged with stdout
     }
 
-    public void open() throws IOException
+    public void open()
     {
-        process = builder.start();
-        gdb_in = process.outputWriter(); // STDin of gdb
-        gdb_out = process.inputReader();// STDout of gdb
-        readResponses();
+        state = new GdbState();
+        try
+        {
+            process = builder.start();
+            gdb_in = process.outputWriter(); // stdin of gdb
+            gdb_out = process.inputReader();// stdout of gdb
+            parseResponses(null);
+        }
+        catch(IOException e)
+        {
+            log.error("Failed to start gdb!");
+            process = null;
+        }
     }
 
-    public void send_command(String command) throws IOException
+    private GdbCommand parseResponses(GdbCommand cmd)
     {
-        gdb_in.write("-" + command + "\r\n");
-        gdb_in.flush();
+        try
+        {
+            String line;
+            String idToken = state.getActiveCommandId();
+            while ((line = gdb_out.readLine()) != null)
+            {
+                if((null != idToken) && (true == line.startsWith(idToken)))
+                {
+                    // response to the currently active command
+                    // starts with idToken + "^"
+                    GdbResponse res = new GdbResponse(line);
+                    String record = line.substring(idToken.length() + 1);
+                    String[] parts = record.split(",");
+                    res.addResult(parts);
+                    if(null != cmd)
+                    {
+                        cmd.addResult(res);
+                    }
+                }
+                else if(true == line.startsWith("~"))
+                {
+                    // console output
+                    handleConsoleOutput(line.substring(1));
+                }
+                else if(true == line.startsWith("="))
+                {
+                    // notify-async-output
+                    handleNotifyAsync(line.substring(1));
+                }
+                else if(true == "(gdb) ".equals(line))
+                {
+                    log.trace("found prompt");
+                    state.receivedPrompt();
+                    return cmd;
+                }
+                else
+                {
+                    log.warn("unrecognized respoonse GDB[" + line + "]!(id=" + idToken + ")");
+                }
+            }
+
+        }
+        catch (IOException e)
+        {
+            log.info("IO Exception !");
+            e.printStackTrace();
+        }
+        return cmd;
     }
 
-    public void close() throws IOException
+    private void handleNotifyAsync(String line)
     {
+        log.info("aync notify: " + line);
+    }
+
+    private void handleConsoleOutput(String line)
+    {
+        log.info("gdb console: " + line);
+    }
+
+    public void send_command(String command)
+    {
+        GdbCommand cmd = new GdbCommand(command);
+        send_command(cmd);
+    }
+
+    public GdbCommand send_command(GdbCommand cmd)
+    {
+        if(null == process)
+        {
+            return cmd;
+        }
+        if(false == state.hasPrompt())
+        {
+            parseResponses(null);
+            if(false == state.hasPrompt())
+            {
+                log.warn("sending command '" + cmd.getCommand() + "' while gdb is busy !");
+            }
+            // found prompt in parseResponses();
+        }
+        try
+        {
+            String commandIdToken = state.getNextToken();
+            gdb_in.write(commandIdToken + "-" + cmd.getCommand() + "\r\n");
+            gdb_in.flush();
+            state.setSendCommand(commandIdToken);
+            cmd = parseResponses(cmd);
+        }
+        catch(IOException e)
+        {
+            log.error("failed to send command '" + cmd.getCommand() + "' IO Exception !");
+        }
+        return cmd;
+    }
+
+    public void close()
+    {
+        if(null == process)
+        {
+            return;
+        }
         send_command("gdb-exit");
         // wait
         for(int i = 0; i < 20; i++)
@@ -80,12 +202,20 @@ public class Gdb
             log.warn("destroying gdb forcefully");
             process.destroyForcibly();
         }
-        while(true == gdb_out.ready())
+        try
         {
-            String line;
-            line = gdb_out.readLine();
-            log.trace(line);
+            while(true == gdb_out.ready())
+            {
+                String line;
+                line = gdb_out.readLine();
+                log.trace(line);
+            }
         }
+        catch(IOException e)
+        {
+            log.error("IO Exception while closing gdb !");
+        }
+
         int res = process.exitValue();
         if(0 != res)
         {
@@ -97,34 +227,5 @@ public class Gdb
             log.trace("gdb exited with 0 !");
         }
     }
-
-    private void readResponses() throws IOException
-    {
-        String line;
-
-        while ((line = gdb_out.readLine()) != null)
-        {
-            if(true == line.startsWith("~"))
-            {
-                System.out.println(line.substring(1));
-            }
-            else if(true == line.startsWith("="))
-            {
-                // notify-async-output
-                log.info("aync notify: " + line.substring(1));
-                // TODO parse
-            }
-            else if(true == "(gdb) ".equals(line))
-            {
-                log.trace("found prompt");
-                return;
-            }
-            else
-            {
-                log.info("unrecognized respoonse GDB[" + line + "]!");
-            }
-        }
-    }
-
 
 }
