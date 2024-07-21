@@ -13,6 +13,7 @@ import ch.qos.logback.core.joran.spi.JoranException;
 import ch.qos.logback.core.util.StatusPrinter;
 import de.nomagic.gdb.Gdb;
 import de.nomagic.gdb.GdbCommand;
+import de.nomagic.gdb.MiProtocol;
 
 public class BobMain
 {
@@ -130,11 +131,11 @@ public class BobMain
 
     public void run()
     {
+        Configuration cfg = new Configuration();
         Gdb g = new Gdb();
         g.open();
-        GdbCommand cmd = new GdbCommand("list-features");
-        cmd = g.send_command(cmd);
-        log.info("cmd : " + cmd);
+        MiProtocol mi = new MiProtocol(g, cfg);
+        mi.close();
         g.close();
         log.info("main.run(): Done !");
     }

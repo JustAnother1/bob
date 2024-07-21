@@ -28,4 +28,9 @@ public class GdbCommand
         return "GdbCommand [command=" + command + ", results=" + results + "]";
     }
 
+    public GdbResponse[] getResult()
+    {
+        return results.toArray(new GdbResponse[0]);
+    }
+
 }

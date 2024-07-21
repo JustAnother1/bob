@@ -26,12 +26,21 @@ public class Gdb
     // "--nx"
     // Do not execute commands from any .gdbinit or .gdbearlyinit initialization files.
 
-    private String[] gdb_cmd = {"arm-none-eabi-gdb", "--interpreter=mi4", "--nh", "--nx"};
+    private String[] gdb_cmd = {"arm-none-eabi-gdb", "--interpreter=mi2", "--nh", "--nx"};
     private ProcessBuilder builder;
     private Process process = null;
     private BufferedWriter gdb_in;
     private BufferedReader gdb_out;
     private GdbState state;
+
+    enum async {
+        EXEC_ASYNC,
+        STATUS_ASYNC,
+        NOTIFY_ASYNC,
+        CONSOLE_STREAM,
+        TARGET_STREAM,
+        LOG_STREAM
+        }
 
 
     public Gdb()
@@ -71,8 +80,7 @@ public class Gdb
                     // starts with idToken + "^"
                     GdbResponse res = new GdbResponse(line);
                     String record = line.substring(idToken.length() + 1);
-                    String[] parts = record.split(",");
-                    res.addResult(parts);
+                    res.addResult(record);
                     if(null != cmd)
                     {
                         cmd.addResult(res);
@@ -81,12 +89,32 @@ public class Gdb
                 else if(true == line.startsWith("~"))
                 {
                     // console output
-                    handleConsoleOutput(line.substring(1));
+                    handleOutOfBand(line.substring(1), async.CONSOLE_STREAM);
+                }
+                else if(true == line.startsWith("@"))
+                {
+                    // target stream output
+                    handleOutOfBand(line.substring(1), async.TARGET_STREAM);
+                }
+                else if(true == line.startsWith("&"))
+                {
+                    // log stream output
+                    handleOutOfBand(line.substring(1), async.LOG_STREAM);
+                }
+                else if(true == line.startsWith("*"))
+                {
+                    // exec async output
+                    handleOutOfBand(line.substring(1), async.EXEC_ASYNC);
+                }
+                else if(true == line.startsWith("+"))
+                {
+                    // status async output
+                    handleOutOfBand(line.substring(1), async.STATUS_ASYNC);
                 }
                 else if(true == line.startsWith("="))
                 {
                     // notify-async-output
-                    handleNotifyAsync(line.substring(1));
+                    handleOutOfBand(line.substring(1), async.NOTIFY_ASYNC);
                 }
                 else if(true == "(gdb) ".equals(line))
                 {
@@ -109,14 +137,17 @@ public class Gdb
         return cmd;
     }
 
-    private void handleNotifyAsync(String line)
+    private void handleOutOfBand(String line, async type)
     {
-        log.info("aync notify: " + line);
-    }
-
-    private void handleConsoleOutput(String line)
-    {
-        log.info("gdb console: " + line);
+        switch(type)
+        {
+        case EXEC_ASYNC:    log.info("aync exec: " + line);      break;
+        case STATUS_ASYNC:  log.info("aync status: " + line);    break;
+        case NOTIFY_ASYNC:  log.info("aync notify: " + line);    break;
+        case CONSOLE_STREAM:log.info("gdb console: " + line);    break;
+        case TARGET_STREAM: log.info("target console: " + line); break;
+        case LOG_STREAM:    log.info("log console: " + line);    break;
+        }
     }
 
     public void send_command(String command)
